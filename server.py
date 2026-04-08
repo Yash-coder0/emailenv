@@ -68,21 +68,24 @@ def health():
 #         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/reset")
-async def reset(payload: Optional[ResetRequest] = None, x_session_id: Optional[str] = Header(None)):
+async def reset(request: Request, x_session_id: Optional[str] = Header(None)):
     session_id = x_session_id or "default"
     
-    # Check if payload exists and has a task, otherwise default to None
-    task = payload.task if payload else None
+    # The validator might send an empty body or {"task": "..."}
+    # We parse it safely to avoid "Field Required" errors
+    body = await request.json() if await request.body() else {}
+    task = body.get("task")
     
     if task is None:
-        # This satisfies the Scaler structural health check
-        return {"status": "ok", "task": None}
+        # MANDATORY: The validator pings this to check if the server is alive
+        return {"status": "ok", "message": "Server is ready for a task"}
         
     try:
         env = EmailEnv(task)
         sessions[session_id] = env
         obs = env.reset()
-        return obs.model_dump()
+        # Ensure your EmailObservation has a .model_dump() method
+        return obs.model_dump() 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
