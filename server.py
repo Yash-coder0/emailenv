@@ -2,7 +2,7 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 import json
-from emailenv.env import EmailEnv, EmailObservation, EmailAction, EmailReward
+from env import EmailEnv, EmailObservation, EmailAction, EmailReward
 
 
 app = FastAPI(title="EmailEnv RL Server")
