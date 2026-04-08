@@ -1,0 +1,14 @@
+name: emailenv
+version: "1.0.0"
+description: "Intelligent email triage and response RL environment"
+tags: [openenv, email, nlp, productivity]
+tasks:
+  - name: email-classify
+    difficulty: easy
+    max_steps: 3
+  - name: email-draft
+    difficulty: medium
+    max_steps: 5
+  - name: email-triage
+    difficulty: hard
+    max_steps: 30
