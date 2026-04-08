@@ -91,7 +91,7 @@ class EmailEnv:
         info = {}
 
         if self.task_name == "email-classify":
-            from emailenv.graders.classify_grader import ClassifyGrader
+            from graders.classify_grader import ClassifyGrader
             grader = ClassifyGrader()
             raw_reward, breakdown, reason = grader.grade(action, self.current_email)
             info = {"breakdown": breakdown, "reason": reason, "ground_truth": {
@@ -104,7 +104,7 @@ class EmailEnv:
                 self.current_email = self.email_pool[self.current_idx]
 
         elif self.task_name == "email-draft":
-            from emailenv.graders.draft_grader import DraftGrader
+            from graders.draft_grader import DraftGrader
             grader = DraftGrader()
             raw_reward, breakdown, reason = grader.grade(action, self.current_email)
             info = {"breakdown": breakdown, "reason": reason, "expected_tone": self.current_email.get("expected_response_tone")}
@@ -114,7 +114,7 @@ class EmailEnv:
                 self.current_email = self.email_pool[self.current_idx]
 
         else:  # triage
-            from emailenv.graders.triage_grader import TriageGrader
+            from graders.triage_grader import TriageGrader
             grader = TriageGrader()
             raw_reward, breakdown, reason = grader.grade_action(action, self.current_email)
             info = {"breakdown": breakdown, "reason": reason}

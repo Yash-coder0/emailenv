@@ -1,7 +1,7 @@
 import sys
 import os
 
-# Ensure repo root is on path so env.py and emailenv package are importable
+# Ensure repo root is on path so env.py and graders package are importable
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -10,6 +10,7 @@ from typing import Optional
 import json
 from env import EmailEnv, EmailObservation, EmailAction, EmailReward
 
+EPSILON = 1e-4
 
 app = FastAPI(title="EmailEnv RL Server")
 
@@ -77,7 +78,12 @@ def step(action: EmailAction, x_session_id: Optional[str] = Header(None)):
     session_id = x_session_id or "default"
     try:
         env = get_env(session_id)
-        obs, reward, done, info = env.step(action)
+        obs, raw_reward, done, info = env.step(action)
+
+        # CRITICAL: Clamp reward so it is NEVER exactly 0.0 or 1.0
+        reward = float(raw_reward)
+        reward = max(EPSILON, min(1.0 - EPSILON, reward))
+
         return {
             "observation": obs.model_dump(),
             "reward": reward,
