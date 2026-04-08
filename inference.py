@@ -13,6 +13,8 @@ if HF_TOKEN is None:
 
 client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
+EPSILON = 1e-4
+
 SYSTEM_PROMPT = """You are an expert email triage assistant. 
 When given an email, respond with ONLY valid JSON matching the action schema.
 For classify: {"action_type":"classify","priority":"urgent|high|normal|low","category":"bug_report|sales|hr|finance|support|spam|other"}
@@ -30,7 +32,7 @@ Step: {obs['step']}
 Emails remaining: {obs.get('emails_remaining', 0)}
 
 Respond with the appropriate JSON action only."""
-    
+
     response = client.chat.completions.create(
         model=MODEL_NAME,
         max_tokens=500,
@@ -50,50 +52,66 @@ def run_episode(task_name: str):
     import httpx
     MAX_STEPS = {"email-classify": 3, "email-draft": 5, "email-triage": 30}
     max_steps = MAX_STEPS.get(task_name, 10)
-    
+
     reset_resp = httpx.post(f"{ENV_BASE_URL}/reset", json={"task": task_name}, timeout=30)
     obs = reset_resp.json()
-    
+
     print(f"[START] task={task_name} env=emailenv model={MODEL_NAME}", flush=True)
-    
+
     rewards = []
     step = 0
     done = False
     success = False
-    
+    score = EPSILON  # default if no steps complete
+
     try:
         while step < max_steps and not done:
             step += 1
             action = get_action(obs)
             action_str = json.dumps(action, separators=(',', ':'))
-            
+
             step_resp = httpx.post(f"{ENV_BASE_URL}/step", json=action, timeout=30)
             result = step_resp.json()
-            
-            reward = float(result.get("reward", 0.0))
+
+            reward = float(result.get("reward", EPSILON))
             done = bool(result.get("done", False))
             obs = result.get("observation", obs)
             info = result.get("info", {})
             error = info.get("error") or "null"
-            
+
             rewards.append(reward)
             print(f"[STEP] step={step} action={action_str} reward={reward:.2f} done={str(done).lower()} error={error}", flush=True)
-        
-        success = done and (sum(rewards) / len(rewards) > 0.3 if rewards else False)
+
+        # Compute score — must NEVER be exactly 0.0 or 1.0
+        raw_score = sum(rewards) / len(rewards) if rewards else 0.0
+        score = max(EPSILON, min(1.0 - EPSILON, raw_score))
+
+        # Success threshold based on final score
+        success = score > 0.3
+
     except Exception as e:
         error_msg = str(e).replace('\n', ' ')
         print(f"[ERROR] Exception occurred on step {step}: {error_msg}", flush=True)
         if step == 0:
             step = 1
-            rewards = [0.0]
-            print(f"[STEP] step={step} action=null reward=0.00 done=true error={error_msg}", flush=True)
+            rewards = [EPSILON]
+            print(f"[STEP] step={step} action=null reward={EPSILON:.2f} done=true error={error_msg}", flush=True)
+        raw_score = sum(rewards) / len(rewards) if rewards else 0.0
+        score = max(EPSILON, min(1.0 - EPSILON, raw_score))
+        success = score > 0.3
     finally:
         try:
             httpx.post(f"{ENV_BASE_URL}/close", timeout=10)
         except:
             pass
-        rewards_str = ",".join(f"{r:.2f}" for r in rewards) if rewards else "0.00"
-        print(f"[END] success={str(success).lower()} steps={step} rewards={rewards_str}", flush=True)
+        rewards_str = ",".join(f"{r:.2f}" for r in rewards) if rewards else f"{EPSILON:.2f}"
+        print(
+            f"[END] success={str(success).lower()} "
+            f"steps={step} "
+            f"score={score:.2f} "
+            f"rewards={rewards_str}",
+            flush=True
+        )
 
 
 if __name__ == "__main__":

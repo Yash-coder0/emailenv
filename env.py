@@ -4,6 +4,8 @@ from typing import Optional, Literal
 from pydantic import BaseModel, Field
 from pathlib import Path
 
+EPSILON = 1e-4
+
 
 class EmailObservation(BaseModel):
     email_id: str
@@ -57,14 +59,14 @@ class EmailEnv:
         self.step_count = 0
         self.scores = []
         self.processed_count = 0
-        
+
         if self.task_name == "email-classify":
             self.current_email = self.email_pool[0]
         elif self.task_name == "email-draft":
             self.current_email = self.email_pool[0]
         else:  # triage
             self.current_email = self.email_pool[0]
-        
+
         return self._make_observation()
 
     def _make_observation(self) -> EmailObservation:
@@ -84,20 +86,18 @@ class EmailEnv:
 
     def step(self, action: EmailAction) -> tuple[EmailObservation, float, bool, dict]:
         self.step_count += 1
-        reward = 0.0
+        raw_reward = 0.0
         done = False
         info = {}
 
         if self.task_name == "email-classify":
             from emailenv.graders.classify_grader import ClassifyGrader
             grader = ClassifyGrader()
-            reward, breakdown, reason = grader.grade(action, self.current_email)
+            raw_reward, breakdown, reason = grader.grade(action, self.current_email)
             info = {"breakdown": breakdown, "reason": reason, "ground_truth": {
                 "priority": self.current_email["ground_truth_priority"],
                 "category": self.current_email["ground_truth_category"]
             }}
-            self.scores.append(reward)
-            self.processed_count += 1
             done = self.current_idx >= len(self.email_pool) - 1 or self.step_count >= self.config["max_steps"]
             if not done and self.current_idx < len(self.email_pool) - 1:
                 self.current_idx += 1
@@ -106,10 +106,8 @@ class EmailEnv:
         elif self.task_name == "email-draft":
             from emailenv.graders.draft_grader import DraftGrader
             grader = DraftGrader()
-            reward, breakdown, reason = grader.grade(action, self.current_email)
+            raw_reward, breakdown, reason = grader.grade(action, self.current_email)
             info = {"breakdown": breakdown, "reason": reason, "expected_tone": self.current_email.get("expected_response_tone")}
-            self.scores.append(reward)
-            self.processed_count += 1
             done = self.current_idx >= len(self.email_pool) - 1 or self.step_count >= self.config["max_steps"]
             if not done and self.current_idx < len(self.email_pool) - 1:
                 self.current_idx += 1
@@ -118,14 +116,19 @@ class EmailEnv:
         else:  # triage
             from emailenv.graders.triage_grader import TriageGrader
             grader = TriageGrader()
-            reward, breakdown, reason = grader.grade_action(action, self.current_email)
+            raw_reward, breakdown, reason = grader.grade_action(action, self.current_email)
             info = {"breakdown": breakdown, "reason": reason}
-            self.scores.append(reward)
-            self.processed_count += 1
             done = self.current_idx >= len(self.email_pool) - 1 or self.step_count >= self.config["max_steps"]
             if not done and self.current_idx < len(self.email_pool) - 1:
                 self.current_idx += 1
                 self.current_email = self.email_pool[self.current_idx]
+
+        # Safety net: clamp reward regardless of grader output
+        reward = max(EPSILON, min(1.0 - EPSILON, raw_reward))
+        reward = round(reward, 4)
+
+        self.scores.append(reward)
+        self.processed_count += 1
 
         obs = self._make_observation()
         return obs, reward, done, info
