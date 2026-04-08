@@ -35,8 +35,23 @@ class ClassifyGrader:
         if email["ground_truth_priority"] == "urgent" and action.priority == "low":
             penalty = -0.5
         
-        total = max(0.0, total + penalty)
-        total = min(1.0, total)
+        # total = max(0.0, total + penalty)
+        # total = min(1.0, total)
+        
+        # breakdown = {
+        #     "priority_correct": priority_score,
+        #     "category_correct": category_score,
+        #     "bonus": bonus_score,
+        #     "penalty": penalty,
+        #     "total": total
+        # }
+        
+        # reason = f"Priority: {action.priority} (expected {email['ground_truth_priority']}). Category: {action.category} (expected {email['ground_truth_category']})."
+        
+        # return total, breakdown, reason
+
+
+        total = max(0.01, min(0.99, total)) 
         
         breakdown = {
             "priority_correct": priority_score,
@@ -45,7 +60,5 @@ class ClassifyGrader:
             "penalty": penalty,
             "total": total
         }
-        
-        reason = f"Priority: {action.priority} (expected {email['ground_truth_priority']}). Category: {action.category} (expected {email['ground_truth_category']})."
         
         return total, breakdown, reason

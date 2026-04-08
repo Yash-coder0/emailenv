@@ -66,8 +66,21 @@ class DraftGrader:
         else:
             format_score = 0.0
         
-        total = questions_score + tone_score + length_score + format_score
-        total = min(1.0, total)
+        # total = questions_score + tone_score + length_score + format_score
+        # total = min(1.0, total)
+        
+        # breakdown = {
+        #     "questions_covered": questions_score,
+        #     "tone_match": tone_score,
+        #     "length_ok": length_score,
+        #     "format": format_score,
+        #     "total": total
+        # }
+        
+        # reason = f"Word count: {word_count}. Questions matched: {questions_matched}/{len(questions) if questions else 0}. Tone: {tone}."
+        
+        # return total, breakdown, reason
+        total = max(0.01, min(0.99, total))
         
         breakdown = {
             "questions_covered": questions_score,
@@ -76,7 +89,5 @@ class DraftGrader:
             "format": format_score,
             "total": total
         }
-        
-        reason = f"Word count: {word_count}. Questions matched: {questions_matched}/{len(questions) if questions else 0}. Tone: {tone}."
         
         return total, breakdown, reason
