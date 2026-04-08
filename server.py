@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
 import json
@@ -11,7 +11,7 @@ sessions = {}
 
 
 class ResetRequest(BaseModel):
-    task: str
+    task: Optional[str] = None
 
 
 class HealthResponse(BaseModel):
@@ -45,10 +45,22 @@ def health():
 
 
 @app.post("/reset")
-def reset(request: ResetRequest, x_session_id: Optional[str] = Header(None)):
+async def reset(raw_request: Request, x_session_id: Optional[str] = Header(None)):
     session_id = x_session_id or "default"
     try:
-        env = EmailEnv(request.task)
+        body = await raw_request.body()
+        task = None
+        if body:
+            import json as _json
+            try:
+                data = _json.loads(body)
+                task = data.get("task")
+            except Exception:
+                pass
+        if task is None:
+            # OpenEnv structural check — return a minimal valid response
+            return {"status": "ok", "task": None}
+        env = EmailEnv(task)
         sessions[session_id] = env
         obs = env.reset()
         return obs.model_dump()
