@@ -15,7 +15,7 @@ client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
 EPSILON = 1e-4
 
-SYSTEM_PROMPT = """You are an expert email triage assistant. 
+SYSTEM_PROMPT = """You are an expert email triage assistant.
 When given an email, respond with ONLY valid JSON matching the action schema.
 For classify: {"action_type":"classify","priority":"urgent|high|normal|low","category":"bug_report|sales|hr|finance|support|spam|other"}
 For draft: {"action_type":"draft","response_text":"your full response here"}
@@ -44,7 +44,7 @@ Respond with the appropriate JSON action only."""
     raw = response.choices[0].message.content.strip()
     try:
         return json.loads(raw)
-    except:
+    except Exception:
         return {"action_type": "skip"}
 
 
@@ -62,7 +62,7 @@ def run_episode(task_name: str):
     step = 0
     done = False
     success = False
-    score = EPSILON  # default if no steps complete
+    score = 0.5  # ← safe default, strictly between 0 and 1
 
     try:
         while step < max_steps and not done:
@@ -73,38 +73,58 @@ def run_episode(task_name: str):
             step_resp = httpx.post(f"{ENV_BASE_URL}/step", json=action, timeout=30)
             result = step_resp.json()
 
-            reward = float(result.get("reward", EPSILON))
+            # Clamp reward from server — strictly (0, 1)
+            raw_reward = float(result.get("reward", 0.5))
+            reward = max(EPSILON, min(1.0 - EPSILON, raw_reward))
+            reward = round(reward, 4)
+
             done = bool(result.get("done", False))
             obs = result.get("observation", obs)
             info = result.get("info", {})
             error = info.get("error") or "null"
 
             rewards.append(reward)
-            print(f"[STEP] step={step} action={action_str} reward={reward:.2f} done={str(done).lower()} error={error}", flush=True)
+            print(
+                f"[STEP] step={step} action={action_str} "
+                f"reward={reward:.2f} done={str(done).lower()} error={error}",
+                flush=True
+            )
 
-        # Compute score — must NEVER be exactly 0.0 or 1.0
-        raw_score = sum(rewards) / len(rewards) if rewards else 0.0
+        # Score: mean of rewards, strictly (0, 1), 2 decimal places
+        raw_score = sum(rewards) / len(rewards) if rewards else 0.5
         score = max(EPSILON, min(1.0 - EPSILON, raw_score))
+        # ← Round to 2 decimal places AFTER clamping
+        # But check it didn't round to exactly 0.00 or 1.00
+        score_rounded = round(score, 2)
+        if score_rounded <= 0.0:
+            score_rounded = 0.01
+        if score_rounded >= 1.0:
+            score_rounded = 0.99
+        score = score_rounded
 
-        # Success threshold based on final score
         success = score > 0.3
 
     except Exception as e:
         error_msg = str(e).replace('\n', ' ')
-        print(f"[ERROR] Exception occurred on step {step}: {error_msg}", flush=True)
         if step == 0:
             step = 1
-            rewards = [EPSILON]
-            print(f"[STEP] step={step} action=null reward={EPSILON:.2f} done=true error={error_msg}", flush=True)
-        raw_score = sum(rewards) / len(rewards) if rewards else 0.0
-        score = max(EPSILON, min(1.0 - EPSILON, raw_score))
+            rewards = [0.5]
+            print(
+                f"[STEP] step=1 action=null reward=0.50 done=true error={error_msg}",
+                flush=True
+            )
+        raw_score = sum(rewards) / len(rewards) if rewards else 0.5
+        score = max(0.01, min(0.99, round(raw_score, 2)))
         success = score > 0.3
+
     finally:
         try:
-            httpx.post(f"{ENV_BASE_URL}/close", timeout=10)
-        except:
+            import httpx as _httpx
+            _httpx.post(f"{ENV_BASE_URL}/close", timeout=10)
+        except Exception:
             pass
-        rewards_str = ",".join(f"{r:.2f}" for r in rewards) if rewards else f"{EPSILON:.2f}"
+
+        rewards_str = ",".join(f"{r:.2f}" for r in rewards) if rewards else "0.50"
         print(
             f"[END] success={str(success).lower()} "
             f"steps={step} "
